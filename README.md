@@ -12,6 +12,7 @@ An automated Node JS trading bot that earns funding rate arbitrage on Hyperliqui
 - Node.js 18+ (native) or Docker
 - Hyperliquid account with API key
 - PERP and SPOT balances (~50/50 split recommended)
+- Preferably a dedicated account
 
 ### Option 1: Native Node.js
 
@@ -188,5 +189,6 @@ See [CLAUDE.md](CLAUDE.md) for complete technical documentation including:
 ## License
 
 MIT
+
 
 
