@@ -1,0 +1,10 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@msgpack/msgpack": "^3.1.2",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.15.0",
+    "node-fetch": "^3.3.2",
+    "ws": "^8.18.3"
+  }
+}

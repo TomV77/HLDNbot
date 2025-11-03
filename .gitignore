@@ -1,0 +1,21 @@
+# Environment variables and secrets
+.env
+
+# Dependencies
+node_modules/
+
+# Runtime state
+bot-state.json
+
+# Data files
+*.csv
+
+# Temporary files
+nul
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

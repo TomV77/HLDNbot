@@ -1,0 +1,226 @@
+import fs from 'fs';
+import path from 'path';
+
+/**
+ * State Management Utilities
+ *
+ * Manages persistent state for the delta-neutral bot.
+ * Tracks open positions, entry times, and position metadata.
+ */
+
+const STATE_FILE = './bot-state.json';
+
+/**
+ * Default state structure
+ */
+const DEFAULT_STATE = {
+  version: '1.0',
+  position: null,  // Current position, or null if no position
+  lastCheckTime: null,
+  lastOpportunityCheck: null,
+  history: []  // Historical positions
+};
+
+/**
+ * Load bot state from disk
+ * @returns {Object} State object
+ */
+export function loadState() {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const data = fs.readFileSync(STATE_FILE, 'utf8');
+      const state = JSON.parse(data);
+
+      // Ensure all required fields exist (handle old versions)
+      return {
+        ...DEFAULT_STATE,
+        ...state
+      };
+    }
+  } catch (error) {
+    console.error('[State] Error loading state:', error.message);
+  }
+
+  // Return default state if file doesn't exist or error occurred
+  return { ...DEFAULT_STATE };
+}
+
+/**
+ * Save bot state to disk
+ * @param {Object} state - State object to save
+ */
+export function saveState(state) {
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (error) {
+    console.error('[State] Error saving state:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Get current position from state
+ * @param {Object} state - State object
+ * @returns {Object|null} Current position or null
+ */
+export function getCurrentPosition(state) {
+  return state.position;
+}
+
+/**
+ * Check if bot has an open position
+ * @param {Object} state - State object
+ * @returns {boolean} True if position exists
+ */
+export function hasPosition(state) {
+  return state.position !== null;
+}
+
+/**
+ * Record new position in state
+ * @param {Object} state - State object
+ * @param {Object} positionData - Position data
+ * @returns {Object} Updated state
+ */
+export function recordPosition(state, positionData) {
+  const position = {
+    ...positionData,
+    openTime: Date.now(),
+    lastCheckTime: Date.now()
+  };
+
+  return {
+    ...state,
+    position: position,
+    lastOpportunityCheck: Date.now()
+  };
+}
+
+/**
+ * Close current position and move to history
+ * @param {Object} state - State object
+ * @param {Object} closeData - Data about position close
+ * @returns {Object} Updated state
+ */
+export function closePosition(state, closeData) {
+  if (!state.position) {
+    return state;
+  }
+
+  // Move position to history
+  const historicalPosition = {
+    ...state.position,
+    closeTime: Date.now(),
+    closeReason: closeData.reason,
+    perpClosePrice: closeData.perpClosePrice,
+    spotClosePrice: closeData.spotClosePrice,
+    totalPnl: closeData.totalPnl,
+    duration: Date.now() - state.position.openTime
+  };
+
+  return {
+    ...state,
+    position: null,
+    history: [...state.history, historicalPosition],
+    lastCheckTime: Date.now()
+  };
+}
+
+/**
+ * Update position check time
+ * @param {Object} state - State object
+ * @returns {Object} Updated state
+ */
+export function updateCheckTime(state) {
+  return {
+    ...state,
+    lastCheckTime: Date.now(),
+    ...(state.position ? {
+      position: {
+        ...state.position,
+        lastCheckTime: Date.now()
+      }
+    } : {})
+  };
+}
+
+/**
+ * Get position age in milliseconds
+ * @param {Object} position - Position object
+ * @returns {number} Age in milliseconds
+ */
+export function getPositionAge(position) {
+  if (!position) {
+    return 0;
+  }
+
+  return Date.now() - position.openTime;
+}
+
+/**
+ * Check if position meets minimum hold time
+ * @param {Object} position - Position object
+ * @param {number} minHoldTimeMs - Minimum hold time in milliseconds
+ * @returns {boolean} True if can close
+ */
+export function canClosePosition(position, minHoldTimeMs) {
+  if (!position) {
+    return false;
+  }
+
+  return getPositionAge(position) >= minHoldTimeMs;
+}
+
+/**
+ * Format position for display
+ * @param {Object} position - Position object
+ * @returns {string} Formatted string
+ */
+export function formatPosition(position) {
+  if (!position) {
+    return 'No position';
+  }
+
+  const age = getPositionAge(position);
+  const ageHours = (age / (1000 * 60 * 60)).toFixed(1);
+  const ageDays = (age / (1000 * 60 * 60 * 24)).toFixed(2);
+
+  return `
+Position: ${position.symbol} Delta-Neutral
+  PERP: SHORT ${position.perpSize} @ $${position.perpEntryPrice}
+  SPOT: LONG ${position.spotSize} @ $${position.spotEntryPrice}
+  Funding Rate: ${(position.fundingRate * 100).toFixed(4)}% (${(position.annualizedFunding * 100).toFixed(2)}% APY)
+  Open Time: ${new Date(position.openTime).toLocaleString()}
+  Age: ${ageHours}h (${ageDays} days)
+  Position Value: $${position.positionValue?.toFixed(2) || 'N/A'}
+`.trim();
+}
+
+/**
+ * Get statistics from history
+ * @param {Object} state - State object
+ * @returns {Object} Statistics
+ */
+export function getHistoryStats(state) {
+  if (!state.history || state.history.length === 0) {
+    return {
+      totalPositions: 0,
+      totalPnl: 0,
+      avgDuration: 0,
+      avgFundingRate: 0
+    };
+  }
+
+  const totalPositions = state.history.length;
+  const totalPnl = state.history.reduce((sum, p) => sum + (p.totalPnl || 0), 0);
+  const avgDuration = state.history.reduce((sum, p) => sum + (p.duration || 0), 0) / totalPositions;
+  const avgFundingRate = state.history.reduce((sum, p) => sum + (p.annualizedFunding || 0), 0) / totalPositions;
+
+  return {
+    totalPositions,
+    totalPnl,
+    avgDuration,
+    avgDurationDays: avgDuration / (1000 * 60 * 60 * 24),
+    avgFundingRate: avgFundingRate * 100  // Convert to percentage
+  };
+}

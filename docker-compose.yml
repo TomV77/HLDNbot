@@ -1,0 +1,36 @@
+services:
+  delta-neutral-bot:
+    build: .
+    container_name: hyperliquid-bot
+    restart: unless-stopped
+
+    # Environment variables from .env file
+    env_file:
+      - .env
+
+    # Volume mounts for persistent data
+    volumes:
+      # Persist bot state across container restarts
+      - ./bot-state.json:/app/bot-state.json
+      # Optional: Mount config if you want to modify without rebuilding
+      - ./config.json:/app/config.json:ro
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Health check (optional - checks if bot process is running)
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "node"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Optional: Add a network for future expansion (e.g., monitoring)
+networks:
+  default:
+    name: hyperliquid-network

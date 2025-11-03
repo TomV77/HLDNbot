@@ -1,0 +1,67 @@
+{
+  "trading": {
+    "pairs": [
+      "BTC",
+      "ETH",
+      "SOL",
+      "XPL",
+      "PUMP",
+      "FARTCOIN",
+      "PURR",
+      "HYPE"
+    ],
+    "minOrderSizeUSD": {
+      "BTC": 150,
+      "ETH": 15,
+      "SOL": 15,
+      "XPL": 15,
+      "PUMP": 15,
+      "FARTCOIN": 15,
+      "PURR": 15,
+      "HYPE": 15
+    },
+    "balanceUtilizationPercent": 95,
+    "maxSlippagePercent": 5.0,
+    "maxRetries": 3,
+    "orderWaitTime": 10000
+  },
+  "bot": {
+    "minHoldTimeDays": 14,
+    "improvementFactor": 2
+  },
+  "symbolMapping": {
+    "perpToSpot": {
+      "BTC": "UBTC",
+      "ETH": "UETH",
+      "SOL": "USOL",
+      "XPL": "UXPL",
+      "PUMP": "UPUMP",
+      "FARTCOIN": "UFART",
+      "PURR": "PURR",
+      "HYPE": "HYPE"
+    }
+  },
+  "rateLimit": {
+    "maxConcurrentRequests": 5,
+    "delayBetweenBatches": 500,
+    "delayBetweenRequests": 250,
+    "maxRequestsPerSecond": 10,
+    "notes": "in milliseconds. Rate limiting to prevent API throttling. Conservative settings to avoid 429 errors. Orders are NOT affected by this (execute in parallel)."
+  },
+  "thresholds": {
+    "minVolumeUSDC": 75000000,
+    "maxSpreadPercent": 0.15,
+    "maxPerpSpotSpreadPercent": 0.5,
+    "minFundingRatePercent": 5,
+    "notes": "Liquidity thresholds: $75M minimum 24H combined volume, 0.15% maximum bid-ask spread, 0.5% maximum PERP-SPOT spread, 5% minimum funding APY (filters negative and low funding)"
+  },
+  "notes": {
+    "description": "Trading configuration for Hyperliquid spot and perp markets",
+    "pairFormat": "All pairs use PERP symbol naming convention",
+    "spotMapping": "Use symbolMapping.perpToSpot to get corresponding spot symbol",
+    "orderSizes": "Minimum order sizes per symbol defined in minOrderSizeUSD - positions will not open if insufficient capital",
+    "slippage": "Maximum 5% slippage for market orders",
+    "leverage": "Always uses 1x leverage (set per-pair before opening positions)",
+    "bot": "Bot behavior: minHoldTimeDays (minimum time before rebalancing, default 14), improvementFactor (required multiplier for switching positions, default 2x)"
+  }
+}
