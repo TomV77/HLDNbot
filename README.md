@@ -17,7 +17,6 @@ An automated Node JS trading bot that earns funding rate arbitrage on Hyperliqui
 ### Option 1: Native Node.js
 
 ```bash
-cd Delta_Neutral_HL
 npm install
 cp .env.example .env
 # Edit .env with your HL_WALLET and HL_PRIVATE_KEY
@@ -27,7 +26,6 @@ node bot.js
 ### Option 2: Docker
 
 ```bash
-cd Delta_Neutral_HL
 cp .env.example .env
 # Edit .env with your HL_WALLET and HL_PRIVATE_KEY
 docker-compose up -d
@@ -189,6 +187,7 @@ See [CLAUDE.md](CLAUDE.md) for complete technical documentation including:
 ## License
 
 MIT
+
 
 
 
