@@ -1,6 +1,6 @@
 import HyperliquidConnector from '../hyperliquid.js';
 import { getPerpPositions, getSpotBalances } from './positions.js';
-import { getFundingRatesWithHistory } from './funding.js';
+import { getFundingRatesWithHistory, getPredictedFundingRates } from './funding.js';
 import { get24HourVolumes, convertVolumesToUSDC } from './volume.js';
 import { getBidAskSpreads } from './spread.js';
 import { getPerpSpotSpreads } from './arbitrage.js';
@@ -33,9 +33,10 @@ export async function generateStatisticsReport(hyperliquid, symbols, config, opt
     getSpotBalances(hyperliquid, wallet, { verbose: false })
   ]);
 
-  // Market data
-  const [fundingRates, volumes, bidAskSpreads, perpSpotSpreads] = await Promise.all([
+  // Market data - CRITICAL: Fetch PREDICTED funding rates
+  const [fundingRates, predictedFundingRates, volumes, bidAskSpreads, perpSpotSpreads] = await Promise.all([
     getFundingRatesWithHistory(hyperliquid, symbols, { days: 7, verbose: false }),
+    getPredictedFundingRates(hyperliquid, { verbose: false }),
     get24HourVolumes(hyperliquid, symbols, { verbose: false }),
     getBidAskSpreads(hyperliquid, symbols, { config, verbose: false }),
     getPerpSpotSpreads(hyperliquid, symbols, { config, verbose: false })
@@ -113,7 +114,7 @@ export async function generateStatisticsReport(hyperliquid, symbols, config, opt
   );
   lines.push(
     cell('', COLS.symbol) +
-    cell('Avg  | Curr', COLS.funding) +
+    cell('Avg  | Pred', COLS.funding) +  // CRITICAL: Changed from Curr to Pred
     cell('(USDC)', COLS.vol) +
     cell('Perp  | Spot', COLS.bidask) +
     cell('', COLS.psspr) +
@@ -123,6 +124,7 @@ export async function generateStatisticsReport(hyperliquid, symbols, config, opt
 
   for (const symbol of symbols) {
     const funding = fundingRates.find(f => f.symbol === symbol);
+    const predicted = predictedFundingRates.get(symbol);  // CRITICAL: Get predicted funding
     const volume = volumesUSDC.find(v => v.perpSymbol === symbol);
     const bidAskPerp = bidAskSpreads.find(s => s.symbol === symbol && !s.isSpot);
     const spotSymbol = HyperliquidConnector.perpToSpot(symbol);
@@ -130,17 +132,18 @@ export async function generateStatisticsReport(hyperliquid, symbols, config, opt
     const perpSpot = perpSpotSpreads.find(s => s.perpSymbol === symbol);
 
     const avgFundingNum = funding?.history?.avg?.annualized ? (funding.history.avg.annualized * 100) : null;
-    const currFundingNum = funding?.annualizedRate ? (funding.annualizedRate * 100) : null;
+    const predFundingNum = predicted?.predictedAnnualizedRate ? (predicted.predictedAnnualizedRate * 100) : null;  // CRITICAL: Use predicted instead of current
 
     const avgFunding = avgFundingNum !== null ? fmtSigned(avgFundingNum) : 'N/A';
-    const currFunding = currFundingNum !== null ? fmtSigned(currFundingNum) : 'N/A';
+    const predFunding = predFundingNum !== null ? fmtSigned(predFundingNum) : 'N/A';  // CRITICAL: Show predicted
     const volStr = volume?.totalVolUSDC ? `$${(volume.totalVolUSDC / 1e6).toFixed(0)}M` : 'N/A';
     const perpSpread = bidAskPerp?.spreadPercent !== undefined ? bidAskPerp.spreadPercent.toFixed(3) : 'N/A';
     const spotSpread = bidAskSpot?.spreadPercent !== undefined ? bidAskSpot.spreadPercent.toFixed(3) : 'N/A';
     const psSpr = perpSpot?.spreadPercent !== undefined ? Math.abs(perpSpot.spreadPercent).toFixed(3) : 'N/A';
 
     let quality = '';
-    const qualityBasis = (avgFundingNum !== null ? avgFundingNum : (currFundingNum !== null ? currFundingNum : null));
+    // Use predicted for quality assessment if available, otherwise fall back to average
+    const qualityBasis = (predFundingNum !== null ? predFundingNum : (avgFundingNum !== null ? avgFundingNum : null));
     if (qualityBasis !== null) {
       if (qualityBasis >= 10) quality = 'GOOD';
       else if (qualityBasis >= 5) quality = 'MOD';
@@ -149,7 +152,7 @@ export async function generateStatisticsReport(hyperliquid, symbols, config, opt
     }
 
     // Keep inner content within column width (no extra spaces around '|')
-    const fundingCell = `${avgFunding.padStart(5)}|${currFunding.padStart(5)}`;
+    const fundingCell = `${avgFunding.padStart(5)}|${predFunding.padStart(5)}`;  // CRITICAL: Show predicted instead of current
     const bidAskCell = `${String(perpSpread).padStart(5)}|${String(spotSpread).padStart(5)}`;
 
     lines.push(

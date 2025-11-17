@@ -202,6 +202,20 @@ export async function openDeltaNeutralPosition(hyperliquid, opportunity, balance
       console.log(`[Trade]   SPOT: ${spotFillSz} @ $${spotFillPx.toFixed(2)}`);
     }
 
+    // CRITICAL: Use PREDICTED funding rate (what will be paid NEXT), not historical
+    // Use predicted if available, otherwise fall back to current/historical
+    const predictedFundingRate = opportunity.predictedFunding?.predictedFundingRate;
+    const currentFundingRate = opportunity.funding.fundingRate;
+    const useFundingRate = predictedFundingRate !== null && predictedFundingRate !== undefined
+      ? predictedFundingRate
+      : currentFundingRate;
+
+    const predictedAnnualizedFunding = opportunity.predictedFundingRate;
+    const avgAnnualizedFunding = opportunity.avgFundingRate;
+    const useAnnualizedFunding = predictedAnnualizedFunding !== null && predictedAnnualizedFunding !== undefined
+      ? predictedAnnualizedFunding
+      : avgAnnualizedFunding;
+
     return {
       success: true,
       symbol: symbol,
@@ -212,8 +226,8 @@ export async function openDeltaNeutralPosition(hyperliquid, opportunity, balance
       perpEntryPrice: perpFillPx,
       spotEntryPrice: spotFillPx,
       positionValue: perpFillSz * perpFillPx,
-      fundingRate: opportunity.funding.fundingRate,
-      annualizedFunding: opportunity.avgFundingRate,
+      fundingRate: useFundingRate,  // Use predicted rate (hourly)
+      annualizedFunding: useAnnualizedFunding,  // Use predicted annualized rate
       perpResult: perpResult,
       spotResult: spotResult
     };
