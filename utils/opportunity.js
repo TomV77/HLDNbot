@@ -2,7 +2,7 @@ import HyperliquidConnector from '../hyperliquid.js';
 import { getBidAskSpreads, filterBySpread } from './spread.js';
 import { getPerpSpotSpreads, filterByPerpSpotSpread } from './arbitrage.js';
 import { get24HourVolumes, convertVolumesToUSDC, filterByVolumeUSDC } from './volume.js';
-import { getFundingRatesWithHistory, sortByAnnualizedRate } from './funding.js';
+import { getFundingRatesWithHistory, sortByAnnualizedRate, getPredictedFundingRates } from './funding.js';
 
 /**
  * Opportunity Selection Utilities
@@ -11,7 +11,8 @@ import { getFundingRatesWithHistory, sortByAnnualizedRate } from './funding.js';
  * - Bid-ask spreads
  * - PERP-SPOT spreads
  * - 24-hour volume
- * - 7-day average funding rates
+ * - PREDICTED funding rates (what will be paid NEXT)
+ * - 7-day average funding rates (for context/stability assessment)
  */
 
 /**
@@ -30,11 +31,13 @@ export async function getMarketData(hyperliquid, symbols, config, options = {}) 
   }
 
   // Fetch all data in parallel for speed
-  const [bidAskSpreads, perpSpotSpreads, volumes, fundingRates] = await Promise.all([
+  // CRITICAL: Now fetching PREDICTED funding rates for decision-making
+  const [bidAskSpreads, perpSpotSpreads, volumes, fundingRatesHistory, predictedFundingRates] = await Promise.all([
     getBidAskSpreads(hyperliquid, symbols, { config, verbose: false }),
     getPerpSpotSpreads(hyperliquid, symbols, { config, verbose: false }),
     get24HourVolumes(hyperliquid, symbols, { config, verbose: false }),
-    getFundingRatesWithHistory(hyperliquid, symbols, { days: 7, verbose: false })
+    getFundingRatesWithHistory(hyperliquid, symbols, { days: 7, verbose: false }),
+    getPredictedFundingRates(hyperliquid, { verbose: false })
   ]);
 
   // Convert volumes to USDC
@@ -42,13 +45,15 @@ export async function getMarketData(hyperliquid, symbols, config, options = {}) 
 
   if (verbose) {
     console.log(`[Market Data] ✅ Fetched data for ${symbols.length} symbols`);
+    console.log(`[Market Data] ℹ️  Using PREDICTED funding rates for filtering/ranking`);
   }
 
   return {
     bidAskSpreads,
     perpSpotSpreads,
     volumes: volumesUSDC,
-    fundingRates
+    fundingRates: fundingRatesHistory,
+    predictedFundingRates
   };
 }
 
@@ -95,6 +100,8 @@ export function filterOpportunities(marketData, thresholds) {
   const perpSpotMap = new Map(marketData.perpSpotSpreads.map(s => [s.perpSymbol, s]));
   const volumeMap = new Map(marketData.volumes.map(v => [v.perpSymbol, v]));
   const fundingMap = new Map(marketData.fundingRates.map(f => [f.symbol, f]));
+  // CRITICAL: Use predicted funding rates for filtering/ranking decisions
+  const predictedFundingMap = marketData.predictedFundingRates || new Map();
 
   const results = [];
   const rejected = {
@@ -114,6 +121,7 @@ export function filterOpportunities(marketData, thresholds) {
     const perpSpot = perpSpotMap.get(symbol);
     const volume = volumeMap.get(symbol);
     const funding = fundingMap.get(symbol);
+    const predictedFunding = predictedFundingMap.get(symbol);
 
     // Check if all data is available
     if (!bidAsk || !perpSpot || !volume || !funding) {
@@ -188,14 +196,21 @@ export function filterOpportunities(marketData, thresholds) {
       continue;
     }
 
-    // Filter by funding rate (use 7-day average)
+    // CRITICAL: Filter by PREDICTED funding rate (what will be paid NEXT)
+    // Use predicted rate if available, otherwise fall back to historical average
+    const predictedRate = predictedFunding?.predictedAnnualizedRate;
     const avgFundingRate = funding.history?.avg?.annualized || funding.annualizedRate;
-    const avgFundingPercent = avgFundingRate * 100;
 
-    if (avgFundingPercent < minFundingRatePercent) {
+    // For filtering, use predicted rate (what we'll actually earn)
+    const filterFundingRate = predictedRate !== null && predictedRate !== undefined ? predictedRate : avgFundingRate;
+    const filterFundingPercent = filterFundingRate * 100;
+
+    if (filterFundingPercent < minFundingRatePercent) {
       rejected.funding.push({
         symbol,
-        funding: avgFundingPercent,
+        predictedFunding: predictedRate ? (predictedRate * 100) : null,
+        avgFunding: avgFundingRate * 100,
+        usedForFilter: filterFundingPercent,
         threshold: minFundingRatePercent
       });
       continue;
@@ -208,16 +223,23 @@ export function filterOpportunities(marketData, thresholds) {
       perpSpot,
       volume,
       funding,
-      // Composite scores
+      predictedFunding,  // Include predicted funding data
+      // Composite scores - use predicted rate for ranking (what we'll actually earn)
+      predictedFundingRate: predictedRate,
+      predictedFundingPercent: predictedRate ? (predictedRate * 100) : null,
       avgFundingRate: avgFundingRate,
-      avgFundingPercent: avgFundingPercent,
+      avgFundingPercent: avgFundingRate * 100,
+      // Use predicted for primary metric, fall back to average if not available
+      primaryFundingRate: filterFundingRate,
+      primaryFundingPercent: filterFundingPercent,
       totalVolumeUSDC: totalVolumeUSDC,
       maxBidAskSpread: maxBidAskPct,
       perpSpotSpreadAbs: perpSpotSpreadPct,
       // Quality score (higher = better)
       // Weighted: funding 70%, liquidity 20%, spreads 10%
+      // CRITICAL: Use predicted funding for quality score (what we'll actually earn)
       qualityScore: (
-        avgFundingPercent * 0.7 +
+        filterFundingPercent * 0.7 +
         (Math.min(totalVolumeUSDC / minVolumeUSDC, 5) * 2) +  // Cap volume bonus at 5x threshold
         ((maxBidAskSpreadPercent - maxBidAskPct) / maxBidAskSpreadPercent * 10) * 0.1
       )
@@ -243,14 +265,16 @@ export function filterOpportunities(marketData, thresholds) {
 }
 
 /**
- * Rank opportunities by 7-day average funding rate (highest first)
+ * Rank opportunities by PREDICTED funding rate (highest first)
+ * CRITICAL: Uses predicted funding rate (what will be paid NEXT), not historical average
  * @param {Object[]} opportunities - Array of opportunities
  * @returns {Object[]} Sorted opportunities
  */
 export function rankOpportunities(opportunities) {
   return opportunities.sort((a, b) => {
-    // Primary sort: by average funding rate (highest first)
-    const fundingDiff = b.avgFundingRate - a.avgFundingRate;
+    // Primary sort: by PRIMARY funding rate (predicted if available, else average)
+    // This is what we'll actually earn on the next funding payment
+    const fundingDiff = b.primaryFundingRate - a.primaryFundingRate;
     if (Math.abs(fundingDiff) > 0.0001) {
       return fundingDiff;
     }

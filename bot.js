@@ -292,35 +292,39 @@ async function runCycle() {
 
             // Check raw funding data from marketData
             const rawFundingData = analysis.marketData.fundingRates.find(f => f.symbol === position.symbol);
+            const rawPredictedData = analysis.marketData.predictedFundingRates?.get(position.symbol);
 
             if (rawFundingData && !rawFundingData.error) {
-              const rawFunding = rawFundingData.history?.avg?.annualized || rawFundingData.annualizedRate;
-              const rawFundingPercent = rawFunding * 100;
+              // CRITICAL: Use PREDICTED funding rate (what will be paid NEXT), not historical
+              const predictedFunding = rawPredictedData?.predictedAnnualizedRate;
+              const avgFunding = rawFundingData.history?.avg?.annualized || rawFundingData.annualizedRate;
+              const useFunding = predictedFunding !== null && predictedFunding !== undefined ? predictedFunding : avgFunding;
+              const useFundingPercent = useFunding * 100;
 
-              console.log(`${timestamp()} [4/6] Raw funding data: ${rawFundingPercent.toFixed(2)}% APY`);
+              console.log(`${timestamp()} [4/6] Funding data: ${useFundingPercent.toFixed(2)}% APY ${predictedFunding !== null && predictedFunding !== undefined ? '(predicted)' : '(avg)'}`);
 
               // Check if funding is negative
-              if (rawFundingPercent < 0) {
+              if (useFundingPercent < 0) {
                 console.log(`${timestamp()} [4/6] ❌ Funding is negative! Closing position...`);
 
-                // Only reopen if there's a valid positive opportunity
-                const newOpportunity = (analysis.best && analysis.best.avgFundingPercent > 0) ? analysis.best : null;
+                // Only reopen if there's a valid positive opportunity (check primaryFundingPercent)
+                const newOpportunity = (analysis.best && analysis.best.primaryFundingPercent > 0) ? analysis.best : null;
 
                 if (newOpportunity) {
-                  console.log(`${timestamp()} [4/6] ✅ Found positive opportunity: ${newOpportunity.symbol} (${newOpportunity.avgFundingPercent.toFixed(2)}% APY)`);
+                  console.log(`${timestamp()} [4/6] ✅ Found positive opportunity: ${newOpportunity.symbol} (${newOpportunity.primaryFundingPercent.toFixed(2)}% APY)`);
                 } else {
                   console.log(`${timestamp()} [4/6] ⚠️  No positive funding opportunities available. Will close without reopening.`);
                 }
 
                 await closeAndReopen(position, 'Funding turned negative', newOpportunity);
                 return;
-              } else if (rawFundingPercent < config.thresholds.minFundingRatePercent) {
-                console.log(`${timestamp()} [4/6] ⚠️  Funding below minimum threshold (${rawFundingPercent.toFixed(2)}% < ${config.thresholds.minFundingRatePercent}%)`);
+              } else if (useFundingPercent < config.thresholds.minFundingRatePercent) {
+                console.log(`${timestamp()} [4/6] ⚠️  Funding below minimum threshold (${useFundingPercent.toFixed(2)}% < ${config.thresholds.minFundingRatePercent}%)`);
                 console.log(`${timestamp()} [4/6] Checking for better opportunities...`);
 
                 // Close and switch to better opportunity if one exists
                 if (analysis.best && analysis.best.symbol !== position.symbol) {
-                  console.log(`${timestamp()} [4/6] ✅ Found better opportunity: ${analysis.best.symbol} (${analysis.best.avgFundingPercent.toFixed(2)}% APY)`);
+                  console.log(`${timestamp()} [4/6] ✅ Found better opportunity: ${analysis.best.symbol} (${analysis.best.primaryFundingPercent.toFixed(2)}% APY)`);
                   await closeAndReopen(position, 'Funding below minimum threshold', analysis.best);
                   return;
                 } else {
@@ -331,18 +335,20 @@ async function runCycle() {
               console.log(`${timestamp()} [4/6] ❌ Cannot retrieve funding data for ${position.symbol}`);
             }
           } else {
-            const currentFunding = currentSymbolOpp.avgFundingPercent;
-            console.log(`${timestamp()} [4/6] Current position ${position.symbol} funding: ${currentFunding.toFixed(2)}% APY`);
+            // CRITICAL: Use primaryFundingPercent (predicted if available, else avg)
+            const currentFunding = currentSymbolOpp.primaryFundingPercent;
+            const fundingType = currentSymbolOpp.predictedFundingPercent !== null && currentSymbolOpp.predictedFundingPercent !== undefined ? '(predicted)' : '(avg)';
+            console.log(`${timestamp()} [4/6] Current position ${position.symbol} funding: ${currentFunding.toFixed(2)}% APY ${fundingType}`);
 
             // Check if funding is negative
             if (currentFunding < 0) {
               console.log(`${timestamp()} [4/6] ❌ Funding turned negative! Closing position...`);
 
-              // Only reopen if there's a valid positive opportunity
-              const newOpportunity = (analysis.best && analysis.best.avgFundingPercent > 0) ? analysis.best : null;
+              // Only reopen if there's a valid positive opportunity (check primaryFundingPercent)
+              const newOpportunity = (analysis.best && analysis.best.primaryFundingPercent > 0) ? analysis.best : null;
 
               if (newOpportunity) {
-                console.log(`${timestamp()} [4/6] ✅ Found positive opportunity: ${newOpportunity.symbol} (${newOpportunity.avgFundingPercent.toFixed(2)}% APY)`);
+                console.log(`${timestamp()} [4/6] ✅ Found positive opportunity: ${newOpportunity.symbol} (${newOpportunity.primaryFundingPercent.toFixed(2)}% APY)`);
               } else {
                 console.log(`${timestamp()} [4/6] ⚠️  No positive funding opportunities available. Will close without reopening.`);
               }
@@ -355,15 +361,15 @@ async function runCycle() {
             if (analysis.best && analysis.best.symbol !== position.symbol) {
               const isBetter = isSignificantlyBetter(
                 { avgFundingRate: position.annualizedFunding },
-                analysis.best,
+                { avgFundingRate: analysis.best.primaryFundingRate },  // Use primaryFundingRate for comparison
                 IMPROVEMENT_FACTOR
               );
 
               if (isBetter) {
                 console.log(`${timestamp()} [4/6] ✅ Found significantly better opportunity: ${analysis.best.symbol}`);
                 console.log(`${timestamp()} [4/6]   Current: ${(position.annualizedFunding * 100).toFixed(2)}% APY`);
-                console.log(`${timestamp()} [4/6]   New: ${analysis.best.avgFundingPercent.toFixed(2)}% APY`);
-                console.log(`${timestamp()} [4/6]   Improvement: ${(analysis.best.avgFundingRate / position.annualizedFunding).toFixed(2)}x`);
+                console.log(`${timestamp()} [4/6]   New: ${analysis.best.primaryFundingPercent.toFixed(2)}% APY`);
+                console.log(`${timestamp()} [4/6]   Improvement: ${(analysis.best.primaryFundingRate / position.annualizedFunding).toFixed(2)}x`);
                 await closeAndReopen(position, 'Switching to better opportunity', analysis.best);
                 return;
               } else {

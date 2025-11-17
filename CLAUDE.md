@@ -6,6 +6,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is an automated delta-neutral trading bot for Hyperliquid that earns funding rate arbitrage by maintaining market-neutral positions (SHORT PERP + LONG SPOT). The bot automatically selects the best opportunities, opens positions with parallel execution, and manages them based on funding rate changes.
 
+### ⚠️ CRITICAL: Predicted vs Historical Funding Rates
+
+**The bot uses PREDICTED funding rates for all trading decisions**, not historical rates. This is essential for funding rate arbitrage:
+
+- **Historical/Current Rate**: What was paid in the last funding period (past data)
+- **Predicted Rate**: What WILL be paid in the NEXT funding period (forward-looking)
+
+**Why This Matters:**
+1. **Timing**: Opening a position right after funding is paid earns nothing until the next hour
+2. **Negative Funding Prevention**: Predicted rates can detect when funding will turn negative BEFORE it happens
+3. **Better Opportunities**: Identifies positions where predicted funding is better than current
+4. **Accurate Decisions**: All filtering, ranking, and rebalancing uses what you'll actually earn
+
+**Implementation:**
+- `utils/funding.js` - `getPredictedFundingRates()` fetches next funding rate from `predictedFundings` API endpoint
+- `utils/opportunity.js` - Filters and ranks using `predictedFundingRate` (with fallback to 7-day average)
+- `bot.js` - All trading decisions based on predicted rates
+- `utils/statistics.js` - Displays "Avg | Pred" columns (7-day average | predicted next)
+- `utils/trade.js` - Records predicted rate when opening positions
+
 ## Common Commands
 
 ### Running the Bot

@@ -283,6 +283,132 @@ export function calculateFundingStats(history) {
 }
 
 /**
+ * Fetch PREDICTED funding rates for all perpetual symbols
+ * This returns the NEXT funding rate that will be applied, not the current/historical rate
+ *
+ * @param {HyperliquidConnector} hyperliquid - Initialized Hyperliquid connector
+ * @param {Object} options - Optional parameters
+ * @param {boolean} options.verbose - Log progress to console
+ * @returns {Promise<Map<string, Object>>} Map of symbol -> predicted funding info
+ */
+export async function getPredictedFundingRates(hyperliquid, options = {}) {
+  const { verbose = false } = options;
+
+  try {
+    if (verbose) {
+      console.log('Fetching PREDICTED funding rates from Hyperliquid API...');
+    }
+
+    // Fetch predicted fundings
+    const response = await fetch(hyperliquid.restUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        type: 'predictedFundings'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Extract predicted funding rates from the response
+    // The structure is: data = [[coin, [[exchange, {fundingRate, nextFundingTime}], ...]], ...]
+    // We want the "HlPerp" exchange data for each coin
+
+    const fundingMap = new Map();
+
+    for (const [coin, exchanges] of data) {
+      // Find HlPerp exchange data
+      const hlPerpData = exchanges.find(([exchange]) => exchange === 'HlPerp');
+
+      if (hlPerpData && hlPerpData[1]) {
+        const { fundingRate, nextFundingTime } = hlPerpData[1];
+
+        fundingMap.set(coin, {
+          symbol: coin,
+          predictedFundingRate: parseFloat(fundingRate),
+          // Annualize: hourly rate × 24 hours × 365 days
+          predictedAnnualizedRate: parseFloat(fundingRate) * 24 * 365,
+          nextFundingTime: nextFundingTime,
+          nextFundingDate: new Date(nextFundingTime)
+        });
+      }
+    }
+
+    if (verbose) {
+      console.log(`✅ Fetched predicted funding rates for ${fundingMap.size} perpetual symbols`);
+    }
+
+    return fundingMap;
+
+  } catch (error) {
+    console.error('Error fetching predicted funding rates:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Combine current (historical) and predicted funding rates for symbols
+ * This provides a complete view of both what was just paid and what will be paid next
+ *
+ * @param {HyperliquidConnector} hyperliquid - Initialized Hyperliquid connector
+ * @param {string[]} symbols - Array of PERP symbols
+ * @param {Object} options - Optional parameters
+ * @param {boolean} options.verbose - Log progress to console
+ * @returns {Promise<Object[]>} Array of funding rate objects with both current and predicted rates
+ */
+export async function getCombinedFundingRates(hyperliquid, symbols, options = {}) {
+  const { verbose = false } = options;
+
+  // Fetch both current and predicted rates in parallel
+  const [currentRates, predictedRates] = await Promise.all([
+    getAllFundingRates(hyperliquid, { verbose }),
+    getPredictedFundingRates(hyperliquid, { verbose })
+  ]);
+
+  const results = [];
+
+  for (const symbol of symbols) {
+    const current = currentRates.get(symbol);
+    const predicted = predictedRates.get(symbol);
+
+    if (!current && !predicted) {
+      results.push({
+        symbol: symbol,
+        error: `No funding rate data for ${symbol}`
+      });
+      continue;
+    }
+
+    results.push({
+      symbol: symbol,
+      // Current (historical) rate - what was just paid
+      currentFundingRate: current?.fundingRate || null,
+      currentAnnualizedRate: current?.annualizedRate || null,
+      // Predicted rate - what will be paid next
+      predictedFundingRate: predicted?.predictedFundingRate || null,
+      predictedAnnualizedRate: predicted?.predictedAnnualizedRate || null,
+      nextFundingTime: predicted?.nextFundingTime || null,
+      nextFundingDate: predicted?.nextFundingDate || null,
+      // Calculate the change from current to predicted
+      fundingRateChange: (predicted?.predictedFundingRate && current?.fundingRate)
+        ? predicted.predictedFundingRate - current.fundingRate
+        : null,
+      annualizedRateChange: (predicted?.predictedAnnualizedRate && current?.annualizedRate)
+        ? predicted.predictedAnnualizedRate - current.annualizedRate
+        : null
+    });
+  }
+
+  return results;
+}
+
+/**
  * Get current funding rate with 7-day historical statistics
  *
  * @param {HyperliquidConnector} hyperliquid - Initialized Hyperliquid connector

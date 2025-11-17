@@ -1,15 +1,17 @@
 import HyperliquidConnector from '../hyperliquid.js';
-import { getFundingRates, sortByAnnualizedRate, fundingRatesToCSV, filterByAnnualizedRate } from '../utils/funding.js';
+import { getFundingRates, sortByAnnualizedRate, fundingRatesToCSV, filterByAnnualizedRate, getCombinedFundingRates } from '../utils/funding.js';
 import fs from 'fs';
 
 /**
- * Test script to check current funding rates for configured perpetual symbols
+ * Test script to check PREDICTED and current funding rates for configured perpetual symbols
  * and export results ranked by annualized rate
+ *
+ * CRITICAL: Now displays PREDICTED funding rates (what will be paid NEXT), not just historical
  */
 
 async function checkFundingRates() {
   console.log('='.repeat(80));
-  console.log('Hyperliquid Funding Rate Check');
+  console.log('Hyperliquid Funding Rate Check (Current + Predicted)');
   console.log('='.repeat(80));
   console.log();
 
@@ -23,11 +25,11 @@ async function checkFundingRates() {
   // Initialize connector
   const hyperliquid = new HyperliquidConnector({ testnet: false });
 
-  console.log('[2/3] Fetching current funding rates...');
+  console.log('[2/3] Fetching current and PREDICTED funding rates...');
   console.log();
 
-  // Fetch funding rates
-  const results = await getFundingRates(hyperliquid, config.trading.pairs, {
+  // Fetch combined funding rates (current + predicted)
+  const results = await getCombinedFundingRates(hyperliquid, config.trading.pairs, {
     verbose: true
   });
 
@@ -45,8 +47,13 @@ async function checkFundingRates() {
     }
   }
 
-  // Sort by annualized rate (highest first)
-  const sorted = sortByAnnualizedRate(results, true);
+  // Sort by predicted annualized rate (highest first) - this is what matters for trading decisions!
+  const validResults = results.filter(r => !r.error && (r.predictedAnnualizedRate !== null || r.currentAnnualizedRate !== null));
+  const sorted = validResults.sort((a, b) => {
+    const aRate = a.predictedAnnualizedRate !== null ? a.predictedAnnualizedRate : a.currentAnnualizedRate;
+    const bRate = b.predictedAnnualizedRate !== null ? b.predictedAnnualizedRate : b.currentAnnualizedRate;
+    return bRate - aRate;  // Highest first
+  });
 
   if (sorted.length === 0) {
     console.log();
@@ -55,65 +62,68 @@ async function checkFundingRates() {
   }
 
   console.log();
-  console.log('Funding Rates (Ranked by Annualized Rate - Highest First)');
-  console.log('─'.repeat(80));
-  console.log('Symbol      Hourly Rate        Annualized Rate    Direction');
-  console.log('─'.repeat(80));
+  console.log('Funding Rates (Ranked by PREDICTED Rate - Highest First)');
+  console.log('─'.repeat(100));
+  console.log('Symbol      Current (Hourly)   Current (APY)    PREDICTED (Hourly)  PREDICTED (APY)  Change');
+  console.log('─'.repeat(100));
 
   for (const result of sorted) {
-    const hourlyPct = (result.fundingRate * 100).toFixed(6);
-    const annualizedPct = (result.annualizedRate * 100).toFixed(2);
+    const currHourlyPct = result.currentFundingRate !== null ? (result.currentFundingRate * 100).toFixed(6) : 'N/A';
+    const currAnnualPct = result.currentAnnualizedRate !== null ? (result.currentAnnualizedRate * 100).toFixed(2) : 'N/A';
+    const predHourlyPct = result.predictedFundingRate !== null ? (result.predictedFundingRate * 100).toFixed(6) : 'N/A';
+    const predAnnualPct = result.predictedAnnualizedRate !== null ? (result.predictedAnnualizedRate * 100).toFixed(2) : 'N/A';
 
-    // Determine direction and sign
-    let direction;
-    let sign;
-    if (result.fundingRate > 0) {
-      direction = 'Longs pay shorts';
-      sign = '+';
-    } else if (result.fundingRate < 0) {
-      direction = 'Shorts pay longs';
-      sign = '';
-    } else {
-      direction = 'Neutral';
-      sign = ' ';
+    // Calculate change
+    let changeStr = 'N/A';
+    if (result.annualizedRateChange !== null) {
+      const changePct = result.annualizedRateChange * 100;
+      const sign = changePct >= 0 ? '+' : '';
+      changeStr = `${sign}${changePct.toFixed(2)}%`;
     }
 
+    // Format with padding
     console.log(
-      `${result.symbol.padEnd(11)} ${sign}${hourlyPct.padStart(10)}%    ${sign}${annualizedPct.padStart(10)}%    ${direction}`
+      `${result.symbol.padEnd(11)} ` +
+      `${String(currHourlyPct).padStart(10)}%  ` +
+      `${String(currAnnualPct).padStart(10)}%  ` +
+      `${String(predHourlyPct).padStart(10)}%     ` +
+      `${String(predAnnualPct).padStart(10)}%      ` +
+      `${changeStr.padStart(8)}`
     );
   }
 
-  // Calculate statistics
-  const avgAnnualized = sorted.reduce((sum, r) => sum + r.annualizedRate, 0) / sorted.length;
-  const avgAnnualizedPct = (avgAnnualized * 100).toFixed(2);
+  // Calculate statistics based on PREDICTED rates
+  const predictedRates = sorted
+    .filter(r => r.predictedAnnualizedRate !== null)
+    .map(r => r.predictedAnnualizedRate);
 
-  const maxRate = sorted[0]; // Highest (most positive)
-  const minRate = sorted[sorted.length - 1]; // Lowest (most negative)
+  if (predictedRates.length > 0) {
+    const avgPredicted = predictedRates.reduce((sum, r) => sum + r, 0) / predictedRates.length;
+    const avgPredictedPct = (avgPredicted * 100).toFixed(2);
 
-  console.log();
-  console.log('Statistics:');
-  console.log(`  Average Annualized Rate: ${avgAnnualized >= 0 ? '+' : ''}${avgAnnualizedPct}%`);
-  console.log(`  Highest Rate: ${maxRate.symbol} at +${(maxRate.annualizedRate * 100).toFixed(2)}%`);
-  console.log(`  Lowest Rate:  ${minRate.symbol} at ${(minRate.annualizedRate * 100).toFixed(2)}%`);
-  console.log();
-
-  // Filter by high/low threshold (e.g., 10% annualized)
-  const HIGH_FUNDING_THRESHOLD = 10; // 10% annualized
-  const { high, low } = filterByAnnualizedRate(sorted, HIGH_FUNDING_THRESHOLD);
-
-  if (high.length > 0) {
-    console.log(`⚠️  High Funding Rates (|annualized| >= ${HIGH_FUNDING_THRESHOLD}%):`);
-    for (const result of high) {
-      const annualizedPct = (result.annualizedRate * 100).toFixed(2);
-      const direction = result.fundingRate > 0 ? 'LONG position pays' : 'SHORT position pays';
-      console.log(`  ${result.symbol}: ${result.annualizedRate >= 0 ? '+' : ''}${annualizedPct}% (${direction})`);
-    }
     console.log();
+    console.log('Statistics (PREDICTED rates):');
+    console.log(`  Average PREDICTED APY: ${avgPredicted >= 0 ? '+' : ''}${avgPredictedPct}%`);
+    console.log(`  Highest PREDICTED: ${sorted[0].symbol} at ${(sorted[0].predictedAnnualizedRate * 100).toFixed(2)}%`);
+    console.log(`  Lowest PREDICTED:  ${sorted[sorted.length - 1].symbol} at ${(sorted[sorted.length - 1].predictedAnnualizedRate * 100).toFixed(2)}%`);
+    console.log();
+
+    // Show symbols with significant changes
+    const significantChanges = sorted.filter(r => r.annualizedRateChange !== null && Math.abs(r.annualizedRateChange * 100) > 1);
+    if (significantChanges.length > 0) {
+      console.log('⚠️  Significant Changes (> 1% APY):');
+      for (const result of significantChanges) {
+        const changePct = (result.annualizedRateChange * 100).toFixed(2);
+        const sign = result.annualizedRateChange >= 0 ? '+' : '';
+        console.log(`  ${result.symbol}: ${sign}${changePct}% (Current: ${(result.currentAnnualizedRate * 100).toFixed(2)}% → Predicted: ${(result.predictedAnnualizedRate * 100).toFixed(2)}%)`);
+      }
+      console.log();
+    }
   }
 
-  // Export to CSV
-  const csvContent = fundingRatesToCSV(sorted);
-  fs.writeFileSync('./funding-rates.csv', csvContent, 'utf8');
+  console.log('💡 NOTE: PREDICTED rates show what will be paid in the NEXT funding period.');
+  console.log('💡 Trading decisions should be based on PREDICTED rates, not current rates.');
+  console.log();
 
   console.log('✅ Exported funding rates to funding-rates.csv');
   console.log();
