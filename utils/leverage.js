@@ -94,7 +94,28 @@ export async function updateLeverage(hyperliquid, coin, leverage, isCross = fals
 }
 
 /**
- * Set leverage to 1x for a coin
+ * Set leverage for a coin (generic)
+ * @param {HyperliquidConnector} hyperliquid
+ * @param {string} coin
+ * @param {number} leverage
+ * @param {boolean} isCross
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+export async function setLeverage(hyperliquid, coin, leverage = 1, isCross = false, options = {}) {
+  try {
+    return await updateLeverage(hyperliquid, coin, leverage, isCross, options);
+  } catch (error) {
+    return {
+      success: false,
+      coin: coin,
+      error: error.message || String(error)
+    };
+  }
+}
+
+/**
+ * Set leverage to 1x for a coin (deprecated alias)
  * @param {HyperliquidConnector} hyperliquid - Hyperliquid connector
  * @param {string} coin - Coin symbol
  * @param {boolean} isCross - True for cross margin, false for isolated (default false)
@@ -102,28 +123,30 @@ export async function updateLeverage(hyperliquid, coin, leverage, isCross = fals
  * @returns {Promise<Object>} Result
  */
 export async function setLeverageTo1x(hyperliquid, coin, isCross = false, options = {}) {
-  return await updateLeverage(hyperliquid, coin, 3, isCross, options);
+  // Keep backwards compatibility
+  return await setLeverage(hyperliquid, coin, 1, isCross, options);
 }
 
 /**
- * Set leverage to 1x for multiple coins (parallel execution)
+ * Set leverage for multiple coins (parallel execution)
  * @param {HyperliquidConnector} hyperliquid - Hyperliquid connector
  * @param {string[]} coins - Array of coin symbols
+ * @param {number} leverage - Leverage to set for all coins (default 1)
  * @param {boolean} isCross - True for cross margin, false for isolated
  * @param {Object} options - Additional options
  * @returns {Promise<Object[]>} Array of results
  */
-export async function setLeverageTo1xForAll(hyperliquid, coins, isCross = false, options = {}) {
+export async function setLeverageForAll(hyperliquid, coins, leverage = 1, isCross = false, options = {}) {
   const { verbose = false } = options;
 
   if (verbose) {
-    console.log(`[Leverage] Setting leverage to 1x for ${coins.length} coins in parallel...`);
+    console.log(`[Leverage] Setting leverage to ${leverage}x for ${coins.length} coins in parallel...`);
   }
 
   // Execute all leverage updates in parallel
   const promises = coins.map(async (coin) => {
     try {
-      const result = await setLeverageTo1x(hyperliquid, coin, isCross, { verbose });
+      const result = await setLeverage(hyperliquid, coin, leverage, isCross, { verbose });
       return result;
     } catch (error) {
       console.error(`[Leverage] ❌ Failed to set leverage for ${coin}:`, error.message);
@@ -143,6 +166,13 @@ export async function setLeverageTo1xForAll(hyperliquid, coins, isCross = false,
   }
 
   return results;
+}
+
+/**
+ * Set leverage to 1x for multiple coins (deprecated alias)
+ */
+export async function setLeverageTo1xForAll(hyperliquid, coins, isCross = false, options = {}) {
+  return await setLeverageForAll(hyperliquid, coins, 1, isCross, options);
 }
 
 /**
@@ -225,6 +255,3 @@ export function formatLeverageSettings(settings) {
 
   return lines.join('\n');
 }
-
-
-
