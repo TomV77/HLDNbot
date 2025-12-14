@@ -1,5 +1,5 @@
 import HyperliquidConnector from '../hyperliquid.js';
-import { setLeverageTo1x } from './leverage.js';
+import { setLeverage } from './leverage.js';
 
 /**
  * Trading Utilities
@@ -72,7 +72,7 @@ export async function openDeltaNeutralPosition(hyperliquid, opportunity, balance
     };
   }
 
-  // Calculate position sizes based on available capital
+  // Calculate position sizes based on available capital (default fallback)
   const size = availableNotional / perpMid;
   const notionalValue = size * perpMid;
 
@@ -87,9 +87,9 @@ export async function openDeltaNeutralPosition(hyperliquid, opportunity, balance
   const perpAssetInfo = hyperliquid.getAssetInfo(perpSymbol, perpAssetId);
   const spotAssetInfo = hyperliquid.getAssetInfo(spotSymbol, spotAssetId);
 
-  // Round sizes to proper lot sizes
-  const perpSizeRounded = parseFloat(hyperliquid.roundSize(size, perpAssetInfo.szDecimals));
-  const spotSizeRounded = parseFloat(hyperliquid.roundSize(size, spotAssetInfo.szDecimals));
+  // Round sizes to proper lot sizes (initial values - may be overwritten by explicit notional targets)
+  let perpSizeRounded = parseFloat(hyperliquid.roundSize(size, perpAssetInfo.szDecimals));
+  let spotSizeRounded = parseFloat(hyperliquid.roundSize(size, spotAssetInfo.szDecimals));
 
   if (verbose) {
     console.log(`[Trade] Rounded sizes:`);
@@ -107,19 +107,47 @@ export async function openDeltaNeutralPosition(hyperliquid, opportunity, balance
     // Continue anyway, this is normal for different lot sizes
   }
 
-  // Set leverage to 1x for this specific pair before opening position
+  // New: configurable per-symbol/per-trade notional and perp margin to compute desired perp leverage
+  const spotNotionalUSD = config.trading?.spotNotionalUSD ?? Math.min(availableNotional, 300);
+  const perpNotionalUSD = config.trading?.perpNotionalUSD ?? spotNotionalUSD;
+  const perpMarginUSD = config.trading?.perpMarginUSD ?? Math.min(availablePerpNotional, 100);
+
+  // Compute desired perp leverage (at least 1x)
+  const desiredPerpLeverage = Math.max(1, perpNotionalUSD / perpMarginUSD);
+
   if (verbose) {
-    console.log(`[Trade] Setting leverage to 1x for ${symbol}...`);
+    console.log(`[Trade] Desired notionals: SPOT $${spotNotionalUSD}, PERP $${perpNotionalUSD}, perp margin $${perpMarginUSD}`);
+    console.log(`[Trade] -> Desired perp leverage: ${desiredPerpLeverage}x`);
   }
 
+  // Set perp leverage for this asset before opening positions
   try {
-    await setLeverageTo1x(hyperliquid, symbol, false, { verbose: false });
+    await setLeverage(hyperliquid, perpSymbol, desiredPerpLeverage, false, { verbose: true });
+    // Wait briefly to allow exchange state to propagate
+    await new Promise(r => setTimeout(r, 500));
     if (verbose) {
-      console.log(`[Trade] ✅ Leverage set to 1x (isolated) for ${symbol}`);
+      console.log(`[Trade] ✅ Perp leverage set to ${desiredPerpLeverage}x for ${perpSymbol}`);
     }
   } catch (error) {
-    console.warn(`[Trade] ⚠️  Failed to set leverage for ${symbol}: ${error.message}`);
-    console.warn(`[Trade] Continuing anyway...`);
+    console.warn(`[Trade] ⚠️  Failed to set perp leverage for ${perpSymbol}: ${error.message}`);
+    console.warn('[Trade] Continuing anyway...');
+  }
+
+  // Recompute sizes to hit explicit notionals (if configured)
+  try {
+    const spotSizeTarget = spotNotionalUSD / spotMid;
+    const perpSizeTarget = perpNotionalUSD / perpMid;
+
+    perpSizeRounded = parseFloat(hyperliquid.roundSize(perpSizeTarget, perpAssetInfo.szDecimals));
+    spotSizeRounded = parseFloat(hyperliquid.roundSize(spotSizeTarget, spotAssetInfo.szDecimals));
+
+    if (verbose) {
+      console.log(`[Trade] Target sizes (pre-round): perp=${perpSizeTarget}, spot=${spotSizeTarget}`);
+      console.log(`[Trade] Rounded sizes (post-target): perp=${perpSizeRounded}, spot=${spotSizeRounded}`);
+    }
+  } catch (err) {
+    console.warn('[Trade] ⚠️  Error computing target sizes:', err.message);
+    // keep previous rounded sizes
   }
 
   // Execute orders in parallel for speed
