@@ -197,7 +197,7 @@ export async function getLeverageSettings(hyperliquid, user = null) {
 
       leverageSettings.push({
         symbol: symbol,
-        leverage: parseFloat(leverage.value || '3'),
+        leverage: parseFloat(leverage.value || '1'),
         type: leverage.type // 'cross' or 'isolated'
       });
     }
@@ -225,4 +225,5 @@ export function formatLeverageSettings(settings) {
 
   return lines.join('\n');
 }
+
 
