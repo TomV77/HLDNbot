@@ -1,14 +1,14 @@
 import HyperliquidConnector from '../hyperliquid.js';
-import { setLeverageTo1xForAll, getLeverageSettings, formatLeverageSettings } from '../utils/leverage.js';
+import { setLeverageForAll, getLeverageSettings, formatLeverageSettings } from '../utils/leverage.js';
 import fs from 'fs';
 
 /**
- * Test script to set leverage to 1x for all configured pairs
+ * Test script to set leverage to X for all configured pairs
  */
 
 async function setLeverage() {
   console.log('='.repeat(80));
-  console.log('Hyperliquid Leverage Setup - Set to 1x');
+  console.log('Hyperliquid Leverage Setup - Set to 3x');
   console.log('='.repeat(80));
   console.log();
 
@@ -31,12 +31,14 @@ async function setLeverage() {
   console.log(`[2/3] Wallet: ${hyperliquid.wallet}`);
   console.log();
 
-  console.log('[3/3] Setting leverage to 1x (isolated) for all pairs...');
+  const desiredLeverage = 3; // <-- set leverage here
+
+  console.log(`[3/3] Setting leverage to ${desiredLeverage}x (isolated) for all pairs...`);
   console.log('       Note: This will only take effect when you open a position');
   console.log();
 
-  // Set leverage to 1x for all pairs
-  const results = await setLeverageTo1xForAll(hyperliquid, config.trading.pairs, false, {
+  // Set leverage for all pairs (pass desiredLeverage)
+  const results = await setLeverageForAll(hyperliquid, config.trading.pairs, desiredLeverage, false, {
     verbose: true
   });
 
@@ -51,9 +53,9 @@ async function setLeverage() {
   const failed = results.filter(r => !r.success);
 
   if (successful.length > 0) {
-    console.log(`✅ Successfully set leverage to 1x for ${successful.length} pair(s):`);
+    console.log(`✅ Successfully set leverage to ${desiredLeverage}x for ${successful.length} pair(s):`);
     for (const result of successful) {
-      console.log(`   ${result.coin}: 1x ${result.isCross ? 'cross' : 'isolated'}`);
+      console.log(`   ${result.coin}: ${desiredLeverage}x ${result.isCross ? 'cross' : 'isolated'}`);
     }
     console.log();
   }
