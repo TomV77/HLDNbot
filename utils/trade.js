@@ -44,7 +44,7 @@ export async function openDeltaNeutralPosition(hyperliquid, opportunity, balance
   const utilization = config.trading?.balanceUtilizationPercent || 95;
 
   // Calculate available capital for position
-  const perpBalance = balances.perpBalance;
+  const perpBalance = 3 * balances.perpBalance;
   const spotBalance = balances.spotBalance;
 
   // Apply utilization percentage to each balance
@@ -366,3 +366,4 @@ export async function closeDeltaNeutralPosition(hyperliquid, position, config, o
     throw error;
   }
 }
+
