@@ -1,7 +1,6 @@
 {
   "trading": {
     "pairs": [
-      "BTC",
       "ETH",
       "SOL",
       "XPL",
@@ -11,7 +10,6 @@
       "HYPE"
     ],
     "minOrderSizeUSD": {
-      "BTC": 150,
       "ETH": 15,
       "SOL": 15,
       "XPL": 15,
@@ -26,12 +24,11 @@
     "orderWaitTime": 10000
   },
   "bot": {
-    "minHoldTimeDays": 14,
+    "minHoldTimeDays": 0.25,
     "improvementFactor": 2
   },
   "symbolMapping": {
     "perpToSpot": {
-      "BTC": "UBTC",
       "ETH": "UETH",
       "SOL": "USOL",
       "XPL": "UXPL",
@@ -49,11 +46,11 @@
     "notes": "in milliseconds. Rate limiting to prevent API throttling. Conservative settings to avoid 429 errors. Orders are NOT affected by this (execute in parallel)."
   },
   "thresholds": {
-    "minVolumeUSDC": 75000000,
+    "minVolumeUSDC": 10000000,
     "maxSpreadPercent": 0.15,
     "maxPerpSpotSpreadPercent": 0.5,
     "minFundingRatePercent": 5,
-    "notes": "Liquidity thresholds: $75M minimum 24H combined volume, 0.15% maximum bid-ask spread, 0.5% maximum PERP-SPOT spread, 5% minimum funding APY (filters negative and low funding)"
+    "notes": "Liquidity thresholds: $10M minimum 24H combined volume, 0.15% maximum bid-ask spread, 0.5% maximum PERP-SPOT spread, 5% minimum funding APY (filters negative and low funding)"
   },
   "notes": {
     "description": "Trading configuration for Hyperliquid spot and perp markets",
@@ -65,3 +62,4 @@
     "bot": "Bot behavior: minHoldTimeDays (minimum time before rebalancing, default 14), improvementFactor (required multiplier for switching positions, default 2x)"
   }
 }
+
