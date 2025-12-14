@@ -46,11 +46,11 @@
     "notes": "in milliseconds. Rate limiting to prevent API throttling. Conservative settings to avoid 429 errors. Orders are NOT affected by this (execute in parallel)."
   },
   "thresholds": {
-    "minVolumeUSDC": 10000000,
+    "minVolumeUSDC": 50000000,
     "maxSpreadPercent": 0.15,
     "maxPerpSpotSpreadPercent": 0.5,
     "minFundingRatePercent": 5,
-    "notes": "Liquidity thresholds: $10M minimum 24H combined volume, 0.15% maximum bid-ask spread, 0.5% maximum PERP-SPOT spread, 5% minimum funding APY (filters negative and low funding)"
+    "notes": "Liquidity thresholds: $50M minimum 24H combined volume, 0.15% maximum bid-ask spread, 0.5% maximum PERP-SPOT spread, 5% minimum funding APY (filters negative and low funding)"
   },
   "notes": {
     "description": "Trading configuration for Hyperliquid spot and perp markets",
@@ -62,4 +62,5 @@
     "bot": "Bot behavior: minHoldTimeDays (minimum time before rebalancing, default 14), improvementFactor (required multiplier for switching positions, default 2x)"
   }
 }
+
 
