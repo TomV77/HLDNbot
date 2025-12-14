@@ -102,7 +102,7 @@ export async function updateLeverage(hyperliquid, coin, leverage, isCross = fals
  * @returns {Promise<Object>} Result
  */
 export async function setLeverageTo1x(hyperliquid, coin, isCross = false, options = {}) {
-  return await updateLeverage(hyperliquid, coin, 1, isCross, options);
+  return await updateLeverage(hyperliquid, coin, 3, isCross, options);
 }
 
 /**
@@ -225,5 +225,6 @@ export function formatLeverageSettings(settings) {
 
   return lines.join('\n');
 }
+
 
 
