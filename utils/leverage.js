@@ -16,7 +16,7 @@ import HyperliquidConnector from '../hyperliquid.js';
  * @param {Object} options - Additional options
  * @returns {Promise<Object>} Result
  */
-export async function updateLeverage(hyperliquid, coin, 3, isCross = false, options = {}) {
+export async function updateLeverage(hyperliquid, coin, leverage, isCross = false, options = {}) {
   const { verbose = false } = options;
 
   if (!hyperliquid.wallet || !hyperliquid.signer) {
@@ -39,7 +39,7 @@ export async function updateLeverage(hyperliquid, coin, 3, isCross = false, opti
     type: 'updateLeverage',
     asset: assetId,
     isCross: isCross,
-    leverage: leverage
+    leverage: 3
   };
 
   const nonce = Date.now();
